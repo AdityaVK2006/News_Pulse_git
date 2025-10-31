@@ -46,4 +46,6 @@ export const getBookmarks = () => api.get('/users/bookmarks');
 export const addBookmark = (newsItem) => api.post('/users/bookmarks', newsItem);
 export const removeBookmark = (newsId) => api.delete(`/users/bookmarks/${newsId}`);
 
+export const getAISummary = (url) => api.post('/summarize', { url });
+
 export default api;
