@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import {
   HiOutlineBookmark,
   HiBookmark,
@@ -11,6 +11,7 @@ import {
   removeBookmark,
   getAISummary,
   translateText,
+  getSentiment,
 } from "../services/api";
 import { useNavigate } from "react-router-dom";
 import LanguageSelectorModal from "./LanguageSelectorModal";
@@ -27,6 +28,11 @@ const NewsCard = ({
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const navigate = useNavigate();
 
+  // --- Sentiment States ---
+  const [sentiment, setSentiment] = useState(null);
+  const [isSentimentLoading, setIsSentimentLoading] = useState(true);
+  // -------------------------
+
   // --- Translation States ---
   const [translatedTitle, setTranslatedTitle] = useState(null);
   const [translatedDescription, setTranslatedDescription] = useState(null);
@@ -34,6 +40,41 @@ const NewsCard = ({
   const [targetLangCode, setTargetLangCode] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   // --------------------------
+
+  // --- Preload available voices once ---
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+  }, []);
+  // -------------------------------------
+
+  // --- Sentiment Fetch Hook ---
+  useEffect(() => {
+    const fetchSentimentData = async () => {
+      setIsSentimentLoading(true);
+      const textToAnalyze =
+        article.title + " " + (article.description || article.content || "");
+
+      if (textToAnalyze.trim().length > 15) {
+        try {
+          const score = await getSentiment(textToAnalyze);
+          setSentiment(score);
+        } catch (err) {
+          console.error("Failed to fetch sentiment:", err);
+          setSentiment(0);
+        }
+      } else {
+        setSentiment(0);
+      }
+      setIsSentimentLoading(false);
+    };
+    fetchSentimentData();
+  }, [article.title, article.description, article.content]);
+  // ----------------------------
 
   // --- Translation Logic ---
   const performTranslation = useCallback(
@@ -57,12 +98,14 @@ const NewsCard = ({
         const response = await translateText(textToTranslate, targetLang);
         const parts = response.data.translatedText.split("|||");
         const newTitle = parts[0] ? parts[0].trim() : article.title;
-        const newDescription = parts[1]
-          ? parts[1].trim()
-          : aiSummary || article.description;
+        let newDescriptionValue = null;
+
+        if (parts.length > 1) {
+          newDescriptionValue = parts[1] ? parts[1].trim() : "";
+        }
 
         setTranslatedTitle(newTitle);
-        setTranslatedDescription(newDescription);
+        setTranslatedDescription(newDescriptionValue);
         setIsTranslated(true);
       } catch (error) {
         console.error("Error fetching translation:", error);
@@ -91,13 +134,15 @@ const NewsCard = ({
   };
   // --- End Translation Logic ---
 
-  // 🗣 Updated Text-to-speech (✅ FIX MERGED)
+  // 🗣 FIXED Text-to-speech (multi-language working)
   const handleTextToSpeech = useCallback(() => {
-    const textToSpeak = `${translatedTitle || article.title}. ${
-      translatedDescription ||
-      aiSummary ||
-      article.description ||
-      "No description available."
+    const titleToSpeak = translatedTitle || article.title;
+    const bodyToSpeak = isTranslated
+      ? translatedDescription
+      : aiSummary || article.description;
+
+    const textToSpeak = `${titleToSpeak}. ${
+      bodyToSpeak || "No descriptive text available."
     }`;
 
     if (window.speechSynthesis.speaking) {
@@ -107,26 +152,49 @@ const NewsCard = ({
 
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
 
+    let langCode = "en-US";
+    const langMap = {
+      hi: "hi-IN",
+      es: "es-ES",
+      fr: "fr-FR",
+      de: "de-DE",
+      ja: "ja-JP",
+      zh: "zh-CN",
+      ru: "ru-RU",
+      pt: "pt-PT",
+    };
+
     if (isTranslated && targetLangCode) {
-      const langMap = {
-        hi: "hi-IN",
-        es: "es-ES",
-        fr: "fr-FR",
-        de: "de-DE",
-        ja: "ja-JP",
-        zh: "zh-CN",
-        ru: "ru-RU",
-        pt: "pt-PT",
-      };
-      // ✅ FIX: use mapped language code or fallback properly
-      utterance.lang = langMap[targetLangCode] || targetLangCode || "en-US";
-    } else {
-      utterance.lang = "en-US";
+      langCode = langMap[targetLangCode] || targetLangCode || "en-US";
     }
 
+    utterance.lang = langCode;
     utterance.rate = 1;
     utterance.pitch = 1;
-    window.speechSynthesis.speak(utterance);
+
+    const speakNow = () => {
+      const voices = window.speechSynthesis.getVoices();
+      let selectedVoice = voices.find((v) => v.lang.startsWith(langCode));
+
+      if (!selectedVoice && targetLangCode) {
+        selectedVoice = voices.find((v) => v.lang.includes(targetLangCode));
+      }
+
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      } else {
+        console.warn(`⚠️ No matching voice for ${langCode}`);
+      }
+
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    };
+
+    if (window.speechSynthesis.getVoices().length === 0) {
+      window.speechSynthesis.onvoiceschanged = speakNow;
+    } else {
+      setTimeout(speakNow, 200);
+    }
   }, [
     article.title,
     article.description,
@@ -137,6 +205,93 @@ const NewsCard = ({
     targetLangCode,
   ]);
   // ---------------------------
+
+  // 🌍 Universal fallback TTS (Google Translate TTS API)
+  const handleFallbackTTS = useCallback(() => {
+    const text = translatedTitle || article.title || "";
+    const desc = translatedDescription || article.description || "";
+    const combinedText = `${text}. ${desc || "No description available."}`;
+    const langCode = targetLangCode || "en";
+
+    const googleLangMap = {
+      hi: "hi",
+      es: "es",
+      fr: "fr",
+      de: "de",
+      ja: "ja",
+      zh: "zh-CN",
+      ru: "ru",
+      pt: "pt",
+      en: "en",
+    };
+
+    const finalLang = googleLangMap[langCode] || "en";
+    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(
+      combinedText
+    )}&tl=${finalLang}&client=tw-ob`;
+
+    const audio = new Audio(ttsUrl);
+    audio
+      .play()
+      .catch((err) => console.error("Fallback TTS playback error:", err));
+  }, [
+    translatedTitle,
+    translatedDescription,
+    article.title,
+    article.description,
+    targetLangCode,
+  ]);
+  // -----------------------------------------------------
+
+  // 🔊 NEW — Google Cloud Text-to-Speech (multilingual support)
+  const handleCloudTTS = useCallback(async () => {
+    const text =
+      translatedDescription ||
+      translatedTitle ||
+      article.description ||
+      article.title ||
+      "";
+    if (!text) return;
+
+    try {
+      const apiKey = "YOUR_GOOGLE_CLOUD_API_KEY"; // <-- replace this
+      const response = await fetch(
+        `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            input: { text },
+            voice: {
+              languageCode: targetLangCode
+                ? `${targetLangCode}-IN`
+                : "en-US",
+              name: "en-US-Standard-C",
+            },
+            audioConfig: { audioEncoding: "MP3" },
+          }),
+        }
+      );
+
+      const data = await response.json();
+      if (data.audioContent) {
+        const audioSrc = "data:audio/mp3;base64," + data.audioContent;
+        const audio = new Audio(audioSrc);
+        audio.play();
+      } else {
+        console.error("TTS failed:", data);
+      }
+    } catch (err) {
+      console.error("Google Cloud TTS error:", err);
+    }
+  }, [
+    translatedTitle,
+    translatedDescription,
+    article.description,
+    article.title,
+    targetLangCode,
+  ]);
+  // -----------------------------------------------------
 
   const handleGetAISummary = useCallback(async () => {
     if (isSummaryLoading) return;
@@ -175,6 +330,50 @@ const NewsCard = ({
     e.target.src = "/fallback.jpg";
   };
 
+  const renderSentimentDot = () => {
+    if (isSentimentLoading || sentiment === null) {
+      return (
+        <div className="flex items-center gap-1">
+          <div className="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-600 animate-pulse"></div>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            Analyzing
+          </span>
+        </div>
+      );
+    }
+
+    let dotClass = "bg-blue-500 shadow-blue-500/50";
+    let statusText = "Neutral";
+
+    if (sentiment === 1) {
+      dotClass = "bg-green-500 shadow-green-500/50";
+      statusText = "Positive";
+    } else if (sentiment === -1) {
+      dotClass = "bg-red-500 shadow-red-500/50";
+      statusText = "Negative";
+    }
+
+    return (
+      <div className="flex items-center gap-1">
+        <div
+          className={`w-2 h-2 rounded-full shadow-md ${dotClass}`}
+          title={`${statusText} Sentiment`}
+        ></div>
+        <span
+          className={`text-xs font-medium ${
+            sentiment === 1
+              ? "text-green-500"
+              : sentiment === -1
+              ? "text-red-500"
+              : "text-blue-500"
+          }`}
+        >
+          {statusText}
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div
       className="bg-white dark:bg-gray-800 p-5 rounded-xl 
@@ -192,24 +391,38 @@ const NewsCard = ({
         className="w-full h-44 object-cover rounded-lg select-none"
       />
 
+      <div className="flex justify-between items-center text-sm text-gray-500 dark:text-gray-400">
+        <p className="font-semibold">
+          {article.source?.name || "Unknown Source"}
+        </p>
+        {renderSentimentDot()}
+      </div>
+
       <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white line-clamp-2">
         {translatedTitle || article.title}
       </h3>
 
       <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3 flex-grow">
         {isSummaryLoading && isTranslated ? (
-          <p className="text-green-500">Translating...</p>
+          <p className="text-green-500">Loading...</p>
         ) : isSummaryLoading && !isTranslated ? (
-          <p className="text-blue-500">Generating AI summary...</p>
+          <p className="text-blue-500">Loading...</p>
+        ) : isTranslated ? (
+          <p className="font-medium text-gray-600 dark:text-gray-400">
+            {aiSummary && (
+              <HiSparkles className="inline w-4 h-4 mr-1 text-blue-500 dark:text-blue-400" />
+            )}
+            {translatedDescription ||
+              "No description available in the target language."}
+          </p>
         ) : aiSummary ? (
           <p className="font-medium text-blue-500 dark:text-blue-400">
             <HiSparkles className="inline w-4 h-4 mr-1" />
-            AI Summary: {translatedDescription || aiSummary}
+            AI Summary: {aiSummary}
           </p>
         ) : (
           <p>
-            {translatedDescription ||
-              article.description ||
+            {article.description ||
               "No description available for this article."}
           </p>
         )}
@@ -255,7 +468,15 @@ const NewsCard = ({
           </button>
 
           <button
-            onClick={handleTextToSpeech}
+            onClick={() => {
+              try {
+                handleTextToSpeech();
+              } catch (err) {
+                console.warn("Browser TTS failed, trying fallback...");
+                handleFallbackTTS();
+                handleCloudTTS(); // 🆕 Use Google Cloud as final fallback
+              }
+            }}
             title="Listen to article"
             className="p-2 rounded-full text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 transition transform hover:scale-110"
           >

@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_KEY = 'ba9a3ecce83441fcbef5b187282fbfd4';
+const API_KEY = 'f9203d4ea1c64c30a60c3df378972619';
 const BASE_URL = 'https://newsapi.org/v2';
 
 // Create axios instance with default config
@@ -75,13 +75,15 @@ export const fetchTopHeadlines = async (
     let endpoint = '/top-headlines';
     let params = {
       apiKey: API_KEY,
-      pageSize: 30,
+      pageSize: 12,
     };
 
     if (category === "local" && localCity) {
       // 1. Local News: Use 'everything' endpoint to search by city name
       endpoint = '/everything';
       params.q = localCity + " local news"; // Add 'local news' for better results
+      params.language = "hi";
+
       params.sortBy = "publishedAt";
       // No country or category filter, rely entirely on the query
       delete params.country; 

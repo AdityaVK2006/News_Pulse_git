@@ -27,7 +27,7 @@ const staticCategories = [
   "science",
 ];
 
-export const categories = [...staticCategories, "local"];
+export const categories = [...staticCategories];
 
 const getPageNumbersToShow = (currentPage, totalPages) => {
   if (totalPages <= 4) return Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -95,7 +95,10 @@ const Home = ({
 
   const offset = searchQuery ? 0 : HIGHLIGHT_COUNT;
   const paginatedStartIdx = (currentPage - 1) * PAGE_SIZE;
-  const mainArticles = articles.slice(searchQuery ? 0 : HIGHLIGHT_COUNT);
+  // START MODIFICATION
+  // Keep all articles if a search query is provided (offset=0), or if no search query is provided (offset=0)
+  const mainArticles = articles.slice(searchQuery ? 0 : 0); 
+  // END MODIFICATION
   const totalPages = Math.ceil(mainArticles.length / PAGE_SIZE);
   const currentArticles = mainArticles.slice(paginatedStartIdx, paginatedStartIdx + PAGE_SIZE);
   const pagesToShow = getPageNumbersToShow(currentPage, totalPages);

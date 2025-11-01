@@ -3,6 +3,7 @@ import { HiX, HiGlobeAlt } from 'react-icons/hi';
 
 // Common languages and their ISO 639-1 codes for ease of use
 const SUPPORTED_TRANSLATION_LANGUAGES = [
+    { code: 'en', name: 'English' }, // Added English
     { code: 'hi', name: 'Hindi (हिंदी)' },
     { code: 'es', name: 'Spanish (Español)' },
     { code: 'fr', name: 'French (Français)' },
