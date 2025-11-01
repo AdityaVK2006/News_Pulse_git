@@ -5,7 +5,7 @@ const router = express.Router();
 router.post('/', async (req, res) => {
     const { url } = req.body;
     // Reads the token from the updated .env file
-    const APY_HUB_TOKEN = process.env.APY_HUB_TOKEN; 
+    const APY_HUB_TOKEN = "APY0AA4Q4ntHkG9NaCgrLtq3XWc76arGHYZuLYpPexqnYgEVGhRsFX0J6L9jE2R962eBHrE58TEGQ"; 
 
     if (!url) {
         return res.status(400).json({ error: 'Missing article URL' });

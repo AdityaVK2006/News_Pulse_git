@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API_KEY = 'ba9a3ecce83441fcbef5b187282fbfd4';
-const BASE_URL = '/api/news';
+const BASE_URL = 'https://newsapi.org/v2';
 
 // Create axios instance with default config
 const newsApi = axios.create({
