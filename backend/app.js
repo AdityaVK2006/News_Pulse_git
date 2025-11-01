@@ -39,6 +39,7 @@ app.use('/', indexRouter);
 app.use('/users', usersRouter);
 app.use('/summarize', summarizeRouter); 
 app.use('/translate', translateRouter); // MOUNT NEW ROUTE
+app.use('/sentiment', require('./routes/sentiment')); // SENTIMENT ROUTE
 
 // Catch 404 and forward to error handler
 app.use(function (req, res, next) {

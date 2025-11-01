@@ -1,9 +1,17 @@
-import React, { useMemo } from "react";
-import { HiChartBar } from "react-icons/hi";
-import { Pie, Bar, Line } from "react-chartjs-2";
-import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, PointElement, LineElement, TimeScale, Title } from "chart.js";
+import React, { useMemo, useState, useEffect } from "react";
+import { HiChartBar, HiTrendingUp } from "react-icons/hi"; // Added HiTrendingUp
+import { Pie, Bar, Line, Scatter } from "react-chartjs-2"; // Added Scatter
+import { 
+  Chart as ChartJS, 
+  ArcElement, Tooltip, Legend, CategoryScale, LinearScale, 
+  BarElement, PointElement, LineElement, TimeScale, Title,
+  ScatterController, // Import ScatterController for scatter plot type
+} from "chart.js";
 import 'chartjs-adapter-date-fns';
+import { getSentiment } from "../services/api"; // NEW: Import API call for sentiment
+import { categories } from "./Home"; 
 
+// Register all necessary chart components
 ChartJS.register(
   ArcElement,
   Tooltip,
@@ -14,7 +22,8 @@ ChartJS.register(
   PointElement,
   LineElement,
   TimeScale,
-  Title
+  Title,
+  ScatterController
 );
 
 // ================== STOP WORDS ==================
@@ -26,14 +35,13 @@ const STOP_WORDS = new Set([
   "time","also","one","two","has","would","could","which","more","about","out","up","down",
   "back","make","may","must","only","do","did","have","had","been","use","using","according",
   "source","report","read","know","story","post","show","will","go","find","people","than",
-  "them","when","what","where","why","who","how","its","their","our","all","any","most",
-  "some","much","many","very","up","down","over","under","before","after","while","when",
-  "what","where","why","who","whom","whose","since","until","upon","through","into","onto",
+  "them","when","what","where","why","who","whom","whose","since","until","upon","through","into","onto",
   "off","between","among","around","above","below","next","last","first","second","third",
   "like","than","then","so","we","us","our","them","they","their"
 ]);
 
-// ================== HELPERS ==================
+// ================== HELPERS (Existing logic) ==================
+
 const getWordFrequencies = (articles) => {
   const text = articles.map(a => `${a.title} ${a.description || ""}`).join(" ").toLowerCase();
   const cleaned = text.replace(/[^a-z\s]/g, " ");
@@ -69,7 +77,6 @@ const calculateSourceDistribution = (articles) => {
 
 const calculateCategoryDistribution = (articles, currentCategory, searchQuery) => {
   const isSearch = !!searchQuery;
-  // Convert the category 
   const contextCategory = currentCategory.charAt(0).toUpperCase() + currentCategory.slice(1);
 
   const counts = articles.reduce((acc, a) => {
@@ -114,6 +121,101 @@ const generateColors = (count) => {
   return Array.from({ length: count }, (_, i) => colors[i % colors.length]);
 };
 
+// ================== NEW SENTIMENT DATA HOOK ==================
+
+/**
+ * Custom hook to fetch and aggregate sentiment data for the articles.
+ * Sentiment is cached in localStorage to avoid hitting the API too often.
+ */
+const useSentimentData = (articles) => {
+    const [sentimentData, setSentimentData] = useState([]);
+    const [isSentimentLoading, setIsSentimentLoading] = useState(false);
+    
+    // Process articles to aggregate sentiment by source
+    const aggregatedData = useMemo(() => {
+        const sourceData = {}; // { sourceName: { totalSentiment: N, count: M } }
+        
+        sentimentData.forEach(item => {
+            const sourceName = item.source || "Unknown";
+            const score = item.sentiment;
+            
+            sourceData[sourceName] = sourceData[sourceName] || { totalSentiment: 0, count: 0 };
+            sourceData[sourceName].totalSentiment += score;
+            sourceData[sourceName].count += 1;
+        });
+
+        // Convert to format suitable for scatter plot
+        return Object.entries(sourceData)
+            // Filter out sources with less than 2 articles for stable averages
+            .filter(([, data]) => data.count >= 2) 
+            .map(([label, data]) => ({
+                label,
+                // Calculate Average Sentiment (X-axis): -1 (Negative) to +1 (Positive)
+                avgSentiment: data.totalSentiment / data.count,
+                // Total Article Count (Y-axis)
+                volume: data.count,
+                // Bubble Radius (r) - scale it based on log of volume for better visualization
+                r: 5 + Math.log(data.count) * 4 
+            }));
+    }, [sentimentData]);
+
+    useEffect(() => {
+        const fetchAndAnalyzeSentiment = async () => {
+            if (articles.length === 0) {
+                setSentimentData([]);
+                return;
+            }
+            
+            if (isSentimentLoading) return;
+
+            setIsSentimentLoading(true);
+            const analyzedArticles = [];
+            
+            // Loop through articles 
+            for (const article of articles) {
+                const articleId = article.url; // Use URL as unique identifier
+                const cacheKey = `sentiment_${articleId}`;
+                let sentiment = localStorage.getItem(cacheKey);
+
+                if (sentiment === null) {
+                    // Cache miss: Call the backend API
+                    try {
+                        // Use title + description for analysis
+                        const text = article.title + (article.description || '');
+                        const response = await getSentiment(text);
+                        sentiment = response.data?.sentiment;
+                        
+                        // Set short-term cache 
+                        if (sentiment !== undefined) {
+                            localStorage.setItem(cacheKey, sentiment);
+                        }
+                    } catch (error) {
+                        // Default to neutral on API error
+                        sentiment = 0; 
+                    }
+                } else {
+                    // Cache hit
+                    sentiment = parseInt(sentiment);
+                }
+                
+                // Add to our running list
+                analyzedArticles.push({
+                    url: article.url,
+                    source: article.source?.name || "Unknown",
+                    sentiment: sentiment,
+                });
+            }
+            
+            setSentimentData(analyzedArticles);
+            setIsSentimentLoading(false);
+        };
+        
+        fetchAndAnalyzeSentiment();
+    }, [articles]);
+
+    return { aggregatedData, isSentimentLoading };
+}
+
 // ================== MAIN COMPONENT ==================
 const Analytics = ({ 
   articles, 
@@ -123,7 +225,8 @@ const Analytics = ({
   searchQuery,
   country,
   setCountry,
-  SUPPORTED_COUNTRIES
+  SUPPORTED_COUNTRIES,
+  localCity
 }) => {
   const sourceData = useMemo(() => calculateSourceDistribution(articles), [articles]);
   const wordData = useMemo(() => getWordFrequencies(articles), [articles]);
@@ -133,18 +236,22 @@ const Analytics = ({
   const timeData = useMemo(() => calculateTimeSeries(articles), [articles]);
   const totalArticles = articles.length;
   
+  // NEW: Sentiment Hook
+  const { aggregatedData: sentimentAggregation, isSentimentLoading } = useSentimentData(articles);
+
   const currentCountryName = useMemo(() => {
     return SUPPORTED_COUNTRIES.find(c => c.code === country)?.name || country.toUpperCase();
   }, [country, SUPPORTED_COUNTRIES]);
 
   const context = searchQuery 
     ? `Results for "${searchQuery}"`
+    : currentCategory === "local"
+    ? localCity ? `Local News in ${localCity}` : "Local News"
     : currentCategory === "general"
     ? `Top Headlines in ${currentCountryName}`
     : `${currentCategory.charAt(0).toUpperCase() + currentCategory.slice(1)} News in ${currentCountryName}`; 
   
   const handleCategoryChange = (e) => {
-    // Note: This does not clear searchQuery, as Analytics does not expose search input
     setCategory(e.target.value);
   }
 
@@ -161,6 +268,9 @@ const Analytics = ({
     );
   }
 
+  // --- Chart Data & Options ---
+
+  // PIE CHART DATA (Source Distribution)
   const pieData = {
     labels: sourceData.map(d => d.label),
     datasets: [
@@ -193,6 +303,83 @@ const Analytics = ({
     },
   };
 
+  // SCATTER PLOT DATA (Sentiment Matrix)
+  const sentimentColors = sentimentAggregation.map(item => {
+    if (item.avgSentiment > 0.3) return '#10b981'; // Green (Positive)
+    if (item.avgSentiment < -0.3) return '#ef4444'; // Red (Negative)
+    return '#f59e0b'; // Yellow (Neutral)
+  });
+
+  const scatterData = {
+    labels: sentimentAggregation.map(d => d.label), // Labels are used by tooltips
+    datasets: [
+      {
+        label: 'Source Sentiment/Volume',
+        data: sentimentAggregation.map(d => ({
+            x: d.avgSentiment, 
+            y: d.volume, 
+            r: d.r, // Radius size based on article volume
+            label: d.label
+        })),
+        backgroundColor: sentimentColors.map(c => `${c}B0`), // Add transparency
+        borderColor: sentimentColors,
+        borderWidth: 1,
+      },
+    ],
+  };
+
+  const scatterOptions = {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          title: (context) => context[0].raw.label,
+          label: (context) => {
+            const sentiment = context.parsed.x.toFixed(2);
+            const volume = context.parsed.y;
+            return [
+              `Avg. Sentiment: ${sentiment} (${sentiment > 0.3 ? 'Positive' : sentiment < -0.3 ? 'Negative' : 'Neutral'})`,
+              `Volume: ${volume} articles`,
+            ];
+          },
+        },
+      },
+      title: {
+        display: true,
+        text: isSentimentLoading ? 'Calculating Source Sentiment...' : 'Source Sentiment vs. Article Volume',
+        color: isSentimentLoading ? '#3b82f6' : 'rgb(156,163,175)',
+        font: { size: 16, weight: 'bold' }
+      }
+    },
+    scales: {
+      x: {
+        type: 'linear',
+        position: 'bottom',
+        title: {
+          display: true,
+          text: 'Average Sentiment Score (-1.0 Negative -> +1.0 Positive)',
+          color: 'rgb(156,163,175)'
+        },
+        min: -1,
+        max: 1,
+        grid: { color: 'rgba(156,163,175, 0.2)' },
+        ticks: { color: 'rgb(156,163,175)', stepSize: 0.5 }
+      },
+      y: {
+        type: 'linear',
+        title: {
+          display: true,
+          text: 'Article Volume (Count)',
+          color: 'rgb(156,163,175)'
+        },
+        grid: { color: 'rgba(156,163,175, 0.2)' },
+        ticks: { color: 'rgb(156,163,175)', beginAtZero: true }
+      }
+    }
+  };
+
+  // BAR CHART DATA (Category Distribution)
   const barData = {
     labels: categoryData.map(d => d.label),
     datasets: [
@@ -203,7 +390,7 @@ const Analytics = ({
       },
     ],
   };
-
+  
   const barOptions = {
     responsive: true,
     plugins: {
@@ -220,6 +407,7 @@ const Analytics = ({
     },
   };
 
+  // LINE CHART DATA (Time Series)
   const lineData = {
     labels: timeData.map(d => d.date),
     datasets: [
@@ -243,11 +431,13 @@ const Analytics = ({
       y: { ticks: { color: "rgb(156,163,175)" }, beginAtZero: true },
     },
   };
+  // --- End Chart Data & Options ---
+
 
   return (
     <div className="max-w-7xl mx-auto"> 
       
-      {/* ⬅️ NEW: Top Filter Section (similar to Home.jsx structure) */}
+      {/* ⬅️ Top Filter Section */}
       <div className="px-6 py-6 sm:py-8 border-b border-gray-200 dark:border-gray-700/50 shadow-sm dark:shadow-none">
 
         {/* Header/Context Title */}
@@ -260,61 +450,7 @@ const Analytics = ({
               Analyzing <span className="font-bold text-blue-500">{totalArticles}</span> articles in <span className="font-semibold text-blue-400">“{context}”</span>
             </p>
         </div>
-
-        {/* Dropdowns in one row */}
-        <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mb-6">
-          
-            {/* Country Dropdown */}
-            <div className="relative w-full sm:w-48 cursor-pointer">
-                {SUPPORTED_COUNTRIES && (
-                    <select
-                        value={country}
-                        onChange={handleCountryChange}
-                        className="w-full appearance-none py-2.5 pl-4 pr-10 text-base border-2 border-blue-500/70 dark:border-blue-600 rounded-full bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 font-semibold shadow-md focus:outline-none focus:ring-4 focus:ring-blue-400/30 transition-all"
-                        disabled={!!searchQuery}
-                    >
-                        {SUPPORTED_COUNTRIES.map((c) => (
-                            <option key={c.code} value={c.code}>
-                                {c.name}
-                            </option>
-                        ))}
-                    </select>
-                )}
-                <svg
-                  className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-500 dark:text-blue-400 pointer-events-none transition-transform duration-300"
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                </svg>
-            </div>
-            
-            {/* Category Dropdown */}
-            <div className="relative w-full sm:w-48 cursor-pointer">
-                {categories && (
-                    <select
-                        value={currentCategory}
-                        onChange={handleCategoryChange}
-                        className="w-full appearance-none py-2.5 pl-4 pr-10 text-base border-2 border-blue-500/70 dark:border-blue-600 rounded-full bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 font-semibold shadow-md focus:outline-none focus:ring-4 focus:ring-blue-400/30 transition-all"
-                        disabled={!!searchQuery}
-                    >
-                        {categories.map((cat) => (
-                            <option key={cat} value={cat}>
-                                {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                            </option>
-                        ))}
-                    </select>
-                )}
-                <svg
-                  className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-500 dark:text-blue-400 pointer-events-none transition-transform duration-300"
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                </svg>
-            </div>
-
-        </div>
         
-        {/* Mobile/Small Screen Context */}
         <p className="text-md text-gray-600 dark:text-gray-400 sm:hidden text-center mb-4">
             Analyzing <span className="font-bold text-blue-500">{totalArticles}</span> articles in <span className="font-semibold text-blue-400">“{context}”</span>
         </p>
@@ -325,7 +461,28 @@ const Analytics = ({
       {/* GRID CHARTS (p-6 added for internal padding) */}
       <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-10">
         
-        {/* PIE CHART */}
+        {/* NEW: SENTIMENT/BIAS SCATTER PLOT */}
+        <div className="bg-gradient-to-b from-purple-50 to-white dark:from-gray-900 dark:to-gray-800 p-6 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 transition transform hover:scale-[1.01]">
+          <h3 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white border-b pb-2 border-gray-200 dark:border-gray-700 flex items-center gap-2">
+            <HiTrendingUp className="w-6 h-6 text-purple-600" />
+            Source Bias/Sentiment Matrix
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+            Visualize the average sentiment of news sources relative to their article volume. (Larger bubbles = Higher volume). Requires at least 2 articles per source.
+          </p>
+          <div className="flex justify-center items-center h-96">
+            {isSentimentLoading ? (
+                <div className="text-blue-500 animate-pulse flex items-center gap-2">
+                    <svg className="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    Analyzing {totalArticles} articles...
+                </div>
+            ) : (
+                <Scatter data={scatterData} options={scatterOptions} />
+            )}
+          </div>
+        </div>
+
+        {/* PIE CHART (Existing) */}
         <div className="bg-gradient-to-b from-blue-50 to-white dark:from-gray-900 dark:to-gray-800 p-6 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 transition transform hover:scale-[1.01]">
           <h3 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white border-b pb-2 border-gray-200 dark:border-gray-700">Source Distribution</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Breakdown of articles by source.</p>
@@ -334,7 +491,7 @@ const Analytics = ({
           </div>
         </div>
 
-        {/* CATEGORY BAR CHART */}
+        {/* CATEGORY BAR CHART (Existing) */}
         <div className="bg-gradient-to-b from-white to-blue-50 dark:from-gray-800 dark:to-gray-900 p-6 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 transition transform hover:scale-[1.01]">
           <div className="flex justify-between items-center mb-4 border-b pb-2 border-gray-200 dark:border-gray-700">
             <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Articles by Category</h3>
@@ -347,7 +504,7 @@ const Analytics = ({
           </div>
         </div>
 
-        {/* WORD CLOUD */}
+        {/* WORD CLOUD (Existing) */}
         <div className="bg-gradient-to-b from-white to-blue-50 dark:from-gray-800 dark:to-gray-900 p-6 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 transition transform hover:scale-[1.01]">
           <h3 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white border-b pb-2 border-gray-200 dark:border-gray-700">Frequent Terms Word Cloud</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Top 30 recurring keywords in titles & descriptions.</p>
@@ -374,7 +531,7 @@ const Analytics = ({
           </div>
         </div>
 
-        {/* TIME SERIES LINE CHART */}
+        {/* TIME SERIES LINE CHART (Existing) */}
         <div className="bg-gradient-to-b from-blue-50 to-white dark:from-gray-900 dark:to-gray-800 p-6 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 transition transform hover:scale-[1.01]">
           <h3 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white border-b pb-2 border-gray-200 dark:border-gray-700">Articles Over Last 7 Days</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Daily article count trend.</p>

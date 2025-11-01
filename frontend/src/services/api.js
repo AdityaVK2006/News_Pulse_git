@@ -52,4 +52,7 @@ export const getAISummary = (url) => api.post('/summarize', { url });
 export const translateText = (text, targetLang) => 
   api.post('/translate', { text, targetLang });
 
+export const getSentiment = (text) =>
+  api.post('/sentiment', {text});
+
 export default api;

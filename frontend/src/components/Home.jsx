@@ -1,6 +1,9 @@
 import React, { useState } from "react";
 import NewsCard from "./NewsCard";
-import { HiSearch, HiArrowLeft, HiArrowRight } from "react-icons/hi";
+// FIX: Using HiMapPin from the 'hi2' (Heroicons 2.0) set as a more reliable source,
+// or as a workaround for potential caching issues with the 'hi' set.
+import { HiSearch, HiArrowLeft, HiArrowRight } from "react-icons/hi"; // Keep HiMapPin here for now, or move to hi2 if the issue persists
+import { HiMapPin } from "react-icons/hi2"; // Optional: Use solid version if HiMapPin is the outline version
 
 const PAGE_SIZE = 6;
 
@@ -15,8 +18,8 @@ const SUPPORTED_COUNTRIES = [
   { code: "jp", name: "JAPAN" },
 ];
 
-// Categories list
-export const categories = [
+// Categories list - UPDATED: Export the full list including 'local'
+const staticCategories = [
   "general",
   "business",
   "technology",
@@ -26,7 +29,10 @@ export const categories = [
   "science",
 ];
 
-// Pagination logic
+// Exporting the full list including 'local' for other components like Analytics
+export const categories = [...staticCategories, "local"]; // EXPORT UPDATED LIST
+
+// Pagination logic (kept the same)
 const getPageNumbersToShow = (currentPage, totalPages) => {
   if (totalPages <= 4) return Array.from({ length: totalPages }, (_, i) => i + 1);
   const windowSize = 2;
@@ -57,6 +63,9 @@ const Home = ({
   setSearchQuery,
   country,
   setCountry,
+  localCity, // NEW PROP
+  isFetchingLocation, // NEW PROP
+  fetchLocalCity, // NEW PROP
 }) => {
   const [bookmarkedArticles, setBookmarkedArticles] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -70,16 +79,30 @@ const Home = ({
 
   // Category handler
   const handleCategoryChange = (cat) => {
-    setCategory(cat);
     setSearchQuery("");
     setCurrentPage(1);
+    
+    if (cat === "local" && !localCity) {
+      // If 'Local' is clicked and city is unknown, fetch location first
+      fetchLocalCity();
+    }
+    setCategory(cat);
   };
 
   // Country handler
   const handleCountryChange = (e) => {
     setCountry(e.target.value);
     setCurrentPage(1);
+    setCategory("general"); // Switch to general when country changes
   };
+  
+  // Display context for the user
+  const context = searchQuery 
+    ? `Results for "${searchQuery}"`
+    : category === "local"
+    ? localCity ? `Local News in ${localCity}` : "Local News (Fetching Location...)"
+    : `${category.charAt(0).toUpperCase() + category.slice(1)} News in ${country.toUpperCase()}`;
+
 
   // Pagination setup
   const startIdx = (currentPage - 1) * PAGE_SIZE;
@@ -117,6 +140,7 @@ const Home = ({
                         font-semibold shadow-md hover:border-blue-600 dark:hover:border-blue-500 
                         focus:outline-none focus:ring-4 focus:ring-blue-400/30 
                         transition-all duration-300 ease-in-out cursor-pointer"
+              disabled={category === "local"} // Disable if viewing local news
             >
               {SUPPORTED_COUNTRIES.map((c) => (
                 <option key={c.code} value={c.code}>
@@ -141,21 +165,39 @@ const Home = ({
 
         </div>
 
+        {/* Current Context */}
+        <div className="text-center mb-6">
+            <span className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+                {context}
+                {isFetchingLocation && category === 'local' && (
+                  <span className="ml-2 text-sm text-blue-500 animate-pulse">(locating...)</span>
+                )}
+            </span>
+        </div>
+
         {/* Categories */}
         <div className="flex flex-wrap justify-center gap-3">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => handleCategoryChange(cat)}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 shadow-md ${
-                category === cat && searchQuery === ""
-                  ? "bg-blue-600 text-white shadow-blue-500/50"
-                  : "bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-600"
-              }`}
-            >
-              {cat.charAt(0).toUpperCase() + cat.slice(1)}
-            </button>
-          ))}
+          {categories.map((cat) => {
+            const isLocal = cat === "local";
+            const isSelected = category === cat && searchQuery === "";
+
+            return (
+              <button
+                key={cat}
+                onClick={() => handleCategoryChange(cat)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 shadow-md ${
+                  isSelected
+                    ? "bg-blue-600 text-white shadow-blue-500/50"
+                    : "bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-600"
+                } ${isLocal ? "flex items-center gap-1" : ""}`}
+                disabled={isLocal && isFetchingLocation}
+              >
+                {/* CHANGED: Use HiMapPin directly from the import */}
+                {isLocal && <HiMapPin className="w-4 h-4" />} 
+                {cat.charAt(0).toUpperCase() + cat.slice(1)}
+              </button>
+            );
+          })}
 
           {searchQuery && (
             <div className="flex items-center space-x-2 px-4 py-2 rounded-full text-sm font-medium bg-green-500 text-white shadow-md">
@@ -182,7 +224,13 @@ const Home = ({
           />
         ))}
 
-        {articles.length === 0 && (
+        {articles.length === 0 && category === 'local' && localCity && (
+            <div className="col-span-full text-center py-10 text-xl text-gray-700 dark:text-gray-300">
+                No local news found for {localCity}. Try searching directly!
+            </div>
+        )}
+        
+        {articles.length === 0 && !isFetchingLocation && category !== 'local' && (
           <div className="col-span-full text-center py-10 text-xl text-gray-700 dark:text-gray-300">
             No articles found.
           </div>
