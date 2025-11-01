@@ -42,7 +42,7 @@ router.post('/', async (req, res) => {
     }
 
     // FIX: Use environment variable instead of hardcoded key
-    const apiKey = 'AIzaSyDHi-82OaEETTnGzFn5nBhFTkBVZCEKwb0'; 
+    const apiKey = 'AIzaSyBQwQHupmkFjpuwlgwqiUivY-Z_f4JPJ7U'; 
     
     if (!apiKey) {
         console.error("Configuration Error: GEMINI_API_KEY is not set in environment variables.");
