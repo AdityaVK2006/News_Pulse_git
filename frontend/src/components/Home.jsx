@@ -208,7 +208,7 @@ const Home = ({
       {!searchQuery && articles.length > 0 && (
         <section className="bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-800 dark:to-gray-900 shadow-inner py-10 my-10 rounded-3xl mx-6">
           <h2 className="text-3xl font-bold text-center mb-6 text-blue-700 dark:text-blue-300">
-            🔥 Top Highlights
+            Top Highlights
           </h2>
           <div className="max-w-6xl mx-auto px-4">
             <Slider {...sliderSettings}>
