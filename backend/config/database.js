@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const connectDB = async () => {
     try {
-        const mongoURI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/news_app';
+        const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://paragdharamkar16_db_user:uPKdRxPbW5RP5ojp@cluster0.ruzswxo.mongodb.net/?appName=Cluster0';
         
         const conn = await mongoose.connect(mongoURI, {
             useNewUrlParser: true,
