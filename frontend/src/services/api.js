@@ -52,7 +52,10 @@ export const getAISummary = (url) => api.post('/summarize', { url });
 export const translateText = (text, targetLang) => 
   api.post('/translate', { text, targetLang });
 
-export const getSentiment = (text) =>
-  api.post('/sentiment', {text});
+// export const getSentiment = (texts) =>
+//   api.post('/sentiment', { texts });
+
+export const getBatchSentiment = (texts) =>
+  api.post('/sentiment', { texts });
 
 export default api;

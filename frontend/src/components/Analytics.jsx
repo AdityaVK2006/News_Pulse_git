@@ -8,7 +8,7 @@ import {
   ScatterController, // Import ScatterController for scatter plot type
 } from "chart.js";
 import 'chartjs-adapter-date-fns';
-import { getSentiment } from "../services/api"; // NEW: Import API call for sentiment
+import { getBatchSentiment } from "../services/api"; // NEW: Import API call for sentiment
 import { categories } from "./Home"; 
 
 // Register all necessary chart components
@@ -169,50 +169,70 @@ const useSentimentData = (articles) => {
             if (isSentimentLoading) return;
 
             setIsSentimentLoading(true);
-            const analyzedArticles = [];
             
-            // Loop through articles 
+            const articlesToAnalyze = [];
+            const cacheHits = [];
+            
+            // 1. Pre-process and check cache, preparing data for batch call
             for (const article of articles) {
-                const articleId = article.url; // Use URL as unique identifier
+                const articleId = article.url; 
                 const cacheKey = `sentiment_${articleId}`;
                 let sentiment = localStorage.getItem(cacheKey);
 
-                if (sentiment === null) {
-                    // Cache miss: Call the backend API
-                    try {
-                        // Use title + description for analysis
-                        const text = article.title + (article.description || '');
-                        const response = await getSentiment(text);
-                        sentiment = response.data?.sentiment;
-                        
-                        // Set short-term cache 
-                        if (sentiment !== undefined) {
-                            localStorage.setItem(cacheKey, sentiment);
-                        }
-                    } catch (error) {
-                        // Default to neutral on API error
-                        sentiment = 0; 
-                    }
+                if (sentiment !== null) {
+                    cacheHits.push({
+                        url: article.url,
+                        source: article.source?.name || "Unknown",
+                        sentiment: parseInt(sentiment),
+                    });
                 } else {
-                    // Cache hit
-                    sentiment = parseInt(sentiment);
+                    // Cache miss: Prepare for API call
+                    articlesToAnalyze.push({
+                        url: article.url,
+                        source: article.source?.name || "Unknown",
+                        text: article.title + (article.description || '')
+                    });
                 }
-                
-                // Add to our running list
-                analyzedArticles.push({
-                    url: article.url,
-                    source: article.source?.name || "Unknown",
-                    sentiment: sentiment,
-                });
+            }
+
+            const textsToAnalyze = articlesToAnalyze.map(a => a.text);
+            let batchResults = [];
+            
+            if (textsToAnalyze.length > 0) {
+                // 2. Call the new batch API endpoint once
+                try {
+                    // CHANGE: Use the new batch API call
+                    const response = await getBatchSentiment(textsToAnalyze);
+                    batchResults = response.data.sentiments || [];
+                } catch (error) {
+                    console.error("Batch Sentiment API Error:", error);
+                    // On complete failure, assign a default neutral score to all articles in the batch
+                    batchResults = new Array(textsToAnalyze.length).fill(0);
+                }
             }
             
-            setSentimentData(analyzedArticles);
+            // 3. Process results, update cache, and combine
+            const newAnalyzedArticles = [];
+            articlesToAnalyze.forEach((article, index) => {
+                const sentiment = batchResults[index] !== undefined ? batchResults[index] : 0;
+                
+                // Set short-term cache (still a good idea)
+                localStorage.setItem(`sentiment_${article.url}`, sentiment);
+
+                newAnalyzedArticles.push({
+                    url: article.url,
+                    source: article.source,
+                    sentiment: sentiment,
+                });
+            });
+            
+            setSentimentData([...cacheHits, ...newAnalyzedArticles]);
             setIsSentimentLoading(false);
         };
         
         fetchAndAnalyzeSentiment();
     }, [articles]);
-
+    
     return { aggregatedData, isSentimentLoading };
 }
 
