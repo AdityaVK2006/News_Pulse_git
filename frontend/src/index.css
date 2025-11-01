@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+
 /* Custom Keyframes for Landing Page Animation */
 
 @keyframes fade-in-up {

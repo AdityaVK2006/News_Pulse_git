@@ -75,7 +75,7 @@ export const fetchTopHeadlines = async (
     let endpoint = '/top-headlines';
     let params = {
       apiKey: API_KEY,
-      pageSize: 12,
+      pageSize: 30,
     };
 
     if (category === "local" && localCity) {

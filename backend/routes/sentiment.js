@@ -1,10 +1,10 @@
+// adityavk2006/news_pulse_git/News_Pulse_git-c7efdfbf7cada1a9dddd4566636c85999fe57000/backend/routes/sentiment.js
 const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 
 // Utility function for exponential backoff during API calls (keep existing)
 async function callGeminiApi(payload, apiUrl) {
-    // ... (Your existing implementation of callGeminiApi remains here)
     let maxRetries = 3;
     let delay = 1000;
     
@@ -41,13 +41,21 @@ router.post('/', async (req, res) => {
         return res.status(400).json({ error: 'Missing or invalid array of texts to analyze' });
     }
 
-    const apiKey = "AIzaSyBMruoUZzYuBbEcpDeomTfnURDXhK5Mc8M"; //
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`; //
+    // FIX: Use environment variable instead of hardcoded key
+    const apiKey = 'AIzaSyDHi-82OaEETTnGzFn5nBhFTkBVZCEKwb0'; 
+    
+    if (!apiKey) {
+        console.error("Configuration Error: GEMINI_API_KEY is not set in environment variables.");
+        // Return a 500 status to the client indicating a server-side configuration issue
+        return res.status(500).json({ error: 'Server configuration error: Gemini API key missing.' });
+    }
 
-    const systemPrompt = "Analyze the following news article content for its primary emotional tone (sentiment). Respond with a single integer value: '-1' for negative, '0' for neutral, or '1' for positive. Do not include any other words, punctuation, or explanations."; //
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`; 
+
+    const systemPrompt = "Analyze the following news article content for its primary emotional tone (sentiment). Respond with a single integer value: '-1' for negative, '0' for neutral, or '1' for positive. Do not include any other words, punctuation, or explanations."; 
 
     const results = [];
-    const THROTTLE_MS = 600; // Increase throttle to mitigate rate limit
+    const THROTTLE_MS = 600; 
 
     // 2. Loop through the batch of texts
     for (let i = 0; i < texts.length; i++) {
@@ -73,7 +81,8 @@ router.post('/', async (req, res) => {
                 console.warn(`Gemini returned unexpected sentiment for text ${i}:`, sentimentText);
             }
         } catch (error) {
-            console.error(`Sentiment API Error for text ${i}:`, error.message);
+            // FIX: Log detailed error, but still safely default to 0
+            console.error(`Sentiment API Fatal Error for text ${i}:`, error.message);
             // On hard failure, sentimentScore remains 0 (neutral)
         }
         

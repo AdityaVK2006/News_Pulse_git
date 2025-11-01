@@ -11,6 +11,9 @@ import Login from "./components/Login";
 import Profile from "./components/Profile";
 import { fetchTopHeadlines, SUPPORTED_COUNTRIES } from "./services/newsApi";
 import { categories } from "./components/Home"; // ⬅️ Import categories for Analytics
+import "slick-carousel/slick/slick.css";
+import "slick-carousel/slick/slick-theme.css";
+
 
 const AppContent = () => {
   const location = useLocation();
