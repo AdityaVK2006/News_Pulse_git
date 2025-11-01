@@ -1,90 +1,103 @@
 import React, { useCallback, useState } from "react";
-import { HiOutlineBookmark, HiBookmark, HiVolumeUp, HiSparkles, HiTranslate } from "react-icons/hi";
-import { addBookmark, removeBookmark, getAISummary, translateText } from "../services/api";
+import {
+  HiOutlineBookmark,
+  HiBookmark,
+  HiVolumeUp,
+  HiSparkles,
+  HiTranslate,
+} from "react-icons/hi";
+import {
+  addBookmark,
+  removeBookmark,
+  getAISummary,
+  translateText,
+} from "../services/api";
 import { useNavigate } from "react-router-dom";
-import LanguageSelectorModal from "./LanguageSelectorModal"; // NEW IMPORT
+import LanguageSelectorModal from "./LanguageSelectorModal";
 
-const NewsCard = ({ article, isBookmarked: initialIsBookmarked, bookmarkId, onBookmarkRemoved }) => {
+const NewsCard = ({
+  article,
+  isBookmarked: initialIsBookmarked,
+  bookmarkId,
+  onBookmarkRemoved,
+}) => {
   const [isBookmarked, setIsBookmarked] = useState(initialIsBookmarked);
   const [loading, setLoading] = useState(false);
   const [aiSummary, setAiSummary] = useState(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const navigate = useNavigate();
 
-  // NEW STATES FOR TRANSLATION
+  // --- Translation States ---
   const [translatedTitle, setTranslatedTitle] = useState(null);
   const [translatedDescription, setTranslatedDescription] = useState(null);
   const [isTranslated, setIsTranslated] = useState(false);
-  const [targetLangCode, setTargetLangCode] = useState(null); // Stores the language code once selected
-  const [isModalOpen, setIsModalOpen] = useState(false); // Controls the selector modal visibility
-  // END NEW STATES
+  const [targetLangCode, setTargetLangCode] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  // --------------------------
 
   // --- Translation Logic ---
-  const performTranslation = useCallback(async (targetLang) => {
-    // If translation is already active and the target language is the same, toggle it off
-    if (isTranslated && targetLangCode === targetLang) {
-      setTranslatedTitle(null);
-      setTranslatedDescription(null);
-      setIsTranslated(false);
-      setTargetLangCode(null);
-      return;
-    }
+  const performTranslation = useCallback(
+    async (targetLang) => {
+      if (isTranslated && targetLangCode === targetLang) {
+        setTranslatedTitle(null);
+        setTranslatedDescription(null);
+        setIsTranslated(false);
+        setTargetLangCode(null);
+        return;
+      }
 
-    setIsSummaryLoading(true); // Reuse loading state
-    setTargetLangCode(targetLang);
+      setIsSummaryLoading(true);
+      setTargetLangCode(targetLang);
 
-    // Combine Title and Description/Summary with a delimiter '|||' for a single API call
-    const textToTranslate = `${article.title}|||${aiSummary || article.description || ""}`;
+      const textToTranslate = `${article.title}|||${
+        aiSummary || article.description || ""
+      }`;
 
-    try {
-      const response = await translateText(textToTranslate, targetLang);
-      
-      // Split the translated result back into Title and Description
-      // The translation service might sometimes return a single string without the delimiter
-      const parts = response.data.translatedText.split('|||');
-      const newTitle = parts[0] ? parts[0].trim() : article.title;
-      const newDescription = parts[1] ? parts[1].trim() : (aiSummary || article.description);
-      
-      setTranslatedTitle(newTitle);
-      setTranslatedDescription(newDescription);
-      setIsTranslated(true);
+      try {
+        const response = await translateText(textToTranslate, targetLang);
+        const parts = response.data.translatedText.split("|||");
+        const newTitle = parts[0] ? parts[0].trim() : article.title;
+        const newDescription = parts[1]
+          ? parts[1].trim()
+          : aiSummary || article.description;
 
-    } catch (error) {
-      console.error("Error fetching translation:", error);
-      alert(error.response?.data?.error || `Failed to translate text to ${targetLang}.`);
-      setIsTranslated(false); // Reset on failure
-      setTargetLangCode(null);
-    } finally {
-      setIsSummaryLoading(false);
-      setIsModalOpen(false); // Close modal after attempt
-    }
-  }, [isTranslated, targetLangCode, article.title, article.description, aiSummary]);
+        setTranslatedTitle(newTitle);
+        setTranslatedDescription(newDescription);
+        setIsTranslated(true);
+      } catch (error) {
+        console.error("Error fetching translation:", error);
+        alert(
+          error.response?.data?.error ||
+            `Failed to translate text to ${targetLang}.`
+        );
+        setIsTranslated(false);
+        setTargetLangCode(null);
+      } finally {
+        setIsSummaryLoading(false);
+        setIsModalOpen(false);
+      }
+    },
+    [isTranslated, targetLangCode, article.title, article.description, aiSummary]
+  );
 
-
-  // Handler for the translate button click: open modal or toggle off
   const handleTranslateClick = () => {
-    if (isTranslated) {
-      // If translated, clicking means "show original"
-      performTranslation(targetLangCode); // Toggles off if parameters match
-    } else {
-      // If not translated, open the language selection modal
-      setIsModalOpen(true);
-    }
+    if (isTranslated) performTranslation(targetLangCode);
+    else setIsModalOpen(true);
   };
 
-  // Handler for language selection from modal
   const handleSelectLanguage = (langCode) => {
-    setIsModalOpen(false); // Close modal immediately
+    setIsModalOpen(false);
     performTranslation(langCode);
   };
   // --- End Translation Logic ---
 
-
-  // 🗣 Updated Text-to-speech
+  // 🗣 Updated Text-to-speech (✅ FIX MERGED)
   const handleTextToSpeech = useCallback(() => {
-    // Speak the translated content if available, otherwise the original/summary
     const textToSpeak = `${translatedTitle || article.title}. ${
-        translatedDescription || aiSummary || article.description || "No description available."
+      translatedDescription ||
+      aiSummary ||
+      article.description ||
+      "No description available."
     }`;
 
     if (window.speechSynthesis.speaking) {
@@ -93,30 +106,44 @@ const NewsCard = ({ article, isBookmarked: initialIsBookmarked, bookmarkId, onBo
     }
 
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    
-    // Attempt to set language for better pronunciation if translated
+
     if (isTranslated && targetLangCode) {
-        // Simple mapping for demonstration purposes
-        const langMap = { 'hi': 'hi-IN', 'es': 'es-ES', 'fr': 'fr-FR', 'de': 'de-DE', 'ja': 'ja-JP', 'zh': 'zh-CN', 'ru': 'ru-RU', 'pt': 'pt-PT' };
-        utterance.lang = langMap[targetLangCode] || 'en-US'; 
+      const langMap = {
+        hi: "hi-IN",
+        es: "es-ES",
+        fr: "fr-FR",
+        de: "de-DE",
+        ja: "ja-JP",
+        zh: "zh-CN",
+        ru: "ru-RU",
+        pt: "pt-PT",
+      };
+      // ✅ FIX: use mapped language code or fallback properly
+      utterance.lang = langMap[targetLangCode] || targetLangCode || "en-US";
     } else {
-        utterance.lang = 'en-US';
+      utterance.lang = "en-US";
     }
-    
+
     utterance.rate = 1;
     utterance.pitch = 1;
     window.speechSynthesis.speak(utterance);
-  }, [article.title, article.description, aiSummary, translatedTitle, translatedDescription, isTranslated, targetLangCode]);
+  }, [
+    article.title,
+    article.description,
+    aiSummary,
+    translatedTitle,
+    translatedDescription,
+    isTranslated,
+    targetLangCode,
+  ]);
+  // ---------------------------
 
-  // ⚡ Fetch AI Summary (via backend summarize route)
   const handleGetAISummary = useCallback(async () => {
     if (isSummaryLoading) return;
-
     if (aiSummary) {
-      setAiSummary(null); // Toggle off
+      setAiSummary(null);
       return;
     }
-
     if (!article.url) {
       setAiSummary("Error: No article URL provided for summarization.");
       return;
@@ -126,14 +153,13 @@ const NewsCard = ({ article, isBookmarked: initialIsBookmarked, bookmarkId, onBo
     setAiSummary(null);
 
     try {
-      // NOTE: If currently translated, switch off translation before getting summary
       if (isTranslated) {
-          setIsTranslated(false);
-          setTranslatedTitle(null);
-          setTranslatedDescription(null);
-          setTargetLangCode(null);
+        setIsTranslated(false);
+        setTranslatedTitle(null);
+        setTranslatedDescription(null);
+        setTargetLangCode(null);
       }
-      
+
       const response = await getAISummary(article.url);
       setAiSummary(response.data.summary || "Summary not available.");
     } catch (error) {
@@ -158,8 +184,6 @@ const NewsCard = ({ article, isBookmarked: initialIsBookmarked, bookmarkId, onBo
                  hover:shadow-xl hover:shadow-blue-500/20 
                  dark:hover:shadow-blue-800/20"
     >
-      
-      {/* 🖼️ Article Image */}
       <img
         src={article.urlToImage || "/fallback.jpg"}
         onError={handleImageError}
@@ -168,15 +192,13 @@ const NewsCard = ({ article, isBookmarked: initialIsBookmarked, bookmarkId, onBo
         className="w-full h-44 object-cover rounded-lg select-none"
       />
 
-      {/* 📰 Title (Uses translatedTitle if available) */}
       <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white line-clamp-2">
         {translatedTitle || article.title}
       </h3>
 
-      {/* 🧠 Description / AI Summary (Uses translatedDescription if available) */}
       <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3 flex-grow">
         {isSummaryLoading && isTranslated ? (
-            <p className="text-green-500">Translating...</p>
+          <p className="text-green-500">Translating...</p>
         ) : isSummaryLoading && !isTranslated ? (
           <p className="text-blue-500">Generating AI summary...</p>
         ) : aiSummary ? (
@@ -185,11 +207,14 @@ const NewsCard = ({ article, isBookmarked: initialIsBookmarked, bookmarkId, onBo
             AI Summary: {translatedDescription || aiSummary}
           </p>
         ) : (
-          <p>{translatedDescription || article.description || "No description available for this article."}</p>
+          <p>
+            {translatedDescription ||
+              article.description ||
+              "No description available for this article."}
+          </p>
         )}
       </div>
 
-      {/* 🔗 Footer */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-2 border-t border-gray-100 dark:border-gray-700/50">
         <a
           href={article.url}
@@ -197,12 +222,12 @@ const NewsCard = ({ article, isBookmarked: initialIsBookmarked, bookmarkId, onBo
           rel="noreferrer"
           className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline transition"
         >
-          {isTranslated ? `Read Full Article (${targetLangCode.toUpperCase()}) →` : "Read Full Article →"}
+          {isTranslated
+            ? `Read Full Article (${targetLangCode.toUpperCase()}) →`
+            : "Read Full Article →"}
         </a>
 
         <div className="flex items-center gap-3 self-end sm:self-auto">
-          
-          {/* NEW: Translate Button - Opens Modal */}
           <button
             onClick={handleTranslateClick}
             title={isTranslated ? "Show Original Text" : "Translate"}
@@ -215,8 +240,7 @@ const NewsCard = ({ article, isBookmarked: initialIsBookmarked, bookmarkId, onBo
           >
             <HiTranslate className="w-5 h-5" />
           </button>
-          
-          {/* ✨ AI Summary Button (existing) */}
+
           <button
             onClick={handleGetAISummary}
             title={aiSummary ? "Show Original Description" : "Get AI Summary"}
@@ -230,7 +254,6 @@ const NewsCard = ({ article, isBookmarked: initialIsBookmarked, bookmarkId, onBo
             <HiSparkles className="w-5 h-5" />
           </button>
 
-          {/* 🔊 Listen Button (existing) */}
           <button
             onClick={handleTextToSpeech}
             title="Listen to article"
@@ -239,7 +262,6 @@ const NewsCard = ({ article, isBookmarked: initialIsBookmarked, bookmarkId, onBo
             <HiVolumeUp className="w-5 h-5" />
           </button>
 
-          {/* 🔖 Bookmark Button */}
           <button
             onClick={async () => {
               try {
@@ -273,7 +295,9 @@ const NewsCard = ({ article, isBookmarked: initialIsBookmarked, bookmarkId, onBo
             }}
             disabled={loading}
             title={isBookmarked ? "Remove Bookmark" : "Add Bookmark"}
-            className={`p-1 ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
+            className={`p-1 ${
+              loading ? "opacity-50 cursor-not-allowed" : ""
+            }`}
           >
             {isBookmarked ? (
               <HiBookmark className="w-7 h-7 text-yellow-500 hover:text-yellow-400 transition transform hover:scale-110" />
@@ -283,8 +307,7 @@ const NewsCard = ({ article, isBookmarked: initialIsBookmarked, bookmarkId, onBo
           </button>
         </div>
       </div>
-      
-      {/* NEW: Language Selector Modal */}
+
       <LanguageSelectorModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
