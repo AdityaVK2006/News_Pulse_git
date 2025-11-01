@@ -9,7 +9,8 @@ var connectDB = require('./config/database');
 // Routers
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
-var summarizeRouter = require('./routes/summarize'); // ADDED
+var summarizeRouter = require('./routes/summarize'); // EXISTING
+var translateRouter = require('./routes/translate'); // NEW IMPORT
 
 var app = express();
 
@@ -36,7 +37,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Routes
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
-app.use('/summarize', summarizeRouter); // Mount the summarize route
+app.use('/summarize', summarizeRouter); 
+app.use('/translate', translateRouter); // MOUNT NEW ROUTE
 
 // Catch 404 and forward to error handler
 app.use(function (req, res, next) {

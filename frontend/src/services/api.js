@@ -48,4 +48,8 @@ export const removeBookmark = (newsId) => api.delete(`/users/bookmarks/${newsId}
 
 export const getAISummary = (url) => api.post('/summarize', { url });
 
+// NEW: Translation API - Sends text and targetLang code
+export const translateText = (text, targetLang) => 
+  api.post('/translate', { text, targetLang });
+
 export default api;
